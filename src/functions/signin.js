@@ -2,15 +2,16 @@ const middy = require('@middy/core');
 const jsonBodyParser = require('@middy/http-json-body-parser');
 const validator = require('@middy/validator');
 
-const bcrypt = require('bcrypt');
 
 const createError = require('http-errors');
 const errorHandler = require('../middlewares/error');
 
 const db = require('../database/mongo');
 const User = require('../models/user');
-const { signToken } = require('../helpers/jwt');
 const signInSchema = require('../schemas/signin.schema');
+
+const AmazonCognitoIdentity = require('amazon-cognito-identity-js');
+const { poolData } = require('../config/cognito-config');
 
 // Business logic for sign in
 const signIn = async (event, context) => {
@@ -18,38 +19,48 @@ const signIn = async (event, context) => {
 
   const { email, password } = event.body;
 
-  await db();
+  // await db();
 
-  // Check if email exists
-  const user = await User.findOne({ email });
+  // // Check if email exists
+  // const user = await User.findOne({ email });
 
-  if (!user) {
-    throw createError.Unauthorized();
-  }
+  // if (!user) {
+  //   throw createError.Unauthorized();
+  // }
 
-  // Compare passwords
-  const passwordsMatch = await bcrypt.compare(password, user.password);
-
-  if (!passwordsMatch) {
-    throw createError.Unauthorized();
-  }
-
-  // Issue JWT
-  const tokenJwt = signToken(email);
-
-  return {
-    statusCode: 200,
-    body: JSON.stringify({
-      success: true,
-      token: tokenJwt,
-    }),
+  var authenticationData = {
+    Username: email,
+    Password: password,
   };
+  var authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(
+      authenticationData
+  );
+  var userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+  var userData = {
+      Username: email,
+      Pool: userPool,
+  };
+  var cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+  cognitoUser.authenticateUser(authenticationDetails, {
+      onSuccess: (result) => {
+          console.log('access token : ' + result.getAccessToken().getJwtToken());
+          console.log('id token : ' + result.getIdToken().getJwtToken());
+          console.log('refresh token : ' + result.getRefreshToken().getToken());
+          console.log('Successfully logged!');
+          return {
+            statusCode: 200,
+            body: JSON.stringify({ "status": 1, "message": "user signed in successfully ", "data": result.getIdToken().getJwtToken()}),
+          };
+      },
+      onFailure: (err) => {
+        throw createError.Unauthorized();
+      },
+  });
 };
 
 // Attach middy and returns handler
 const handler = middy(signIn)
   .use(jsonBodyParser())
-  .use(validator({ inputSchema: signInSchema }))
   .use(errorHandler());
 
 module.exports = { handler };

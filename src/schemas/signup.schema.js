@@ -5,7 +5,7 @@ module.exports = {
       type: 'object',
       properties: {
         email: { type: 'string', format: 'email' },
-        password: { type: 'string', minimum: 8 },
+        password: { type: 'string', minimum: 6 },
       },
       required: ['email', 'password'],
     },
